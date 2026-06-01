@@ -22,7 +22,7 @@ def main():
             print("Instrument added successfully!")
 
         elif choice == "2":
-            if len(instrument) == 0:
+            if len(instruments) == 0:
                print("No instruments found.")
             else:
                print("\n--- Instruments ---")
