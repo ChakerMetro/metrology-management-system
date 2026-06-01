@@ -11,10 +11,23 @@ def main():
         if choice == "1":
             name = input("Instrument name: ")
             serial = input("Serial number: ")
+            manufacturer = input("The Manufacturer name: ")
+            calibration_date = input("Calibration date (YYYY-MM-DD): ")
+            next_calibration_date = input("Next calibration date (YYYY-MM-DD): ")
+            location = input("Location: ")
+            status = input("Status (Active/Inactive): ")
+            type = input("Type of instrument: ")
+
 
             instrument = {
             "name": name,
-            "serial": serial
+            "serial": serial,
+            "manufacturer": manufacturer,
+            "calibration_date": calibration_date,
+            "next_calibration_date": next_calibration_date,
+            "location": location,
+            "status": status,
+            "type": type
             }
 
             instruments.append(instrument)
@@ -30,8 +43,14 @@ def main():
                for instrument in instruments:
                    print(
                        f"Name: {instrument['name']} | "
-                       f"Serial: {instrument['serial']}" 
-                   )   
+                       f"Serial: {instrument['serial']} | "
+                       f"Manufacturer: {instrument['manufacturer']} | "
+                       f"Calibration Date: {instrument['calibration_date']} | "
+                       f"Next Calibration Date: {instrument['next_calibration_date']} | "
+                       f"Location: {instrument['location']} | "
+                       f"Status: {instrument['status']} | "
+                       f"Type: {instrument['type']}"
+                   )
 
         elif choice == "3":
             print("Goodbye!")
