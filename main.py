@@ -4,7 +4,8 @@ def main():
         print("\n=== Metrology Management System ===")
         print("1. Add Instrument")
         print("2. View Instruments")
-        print("3. Exit")
+        print("3. Delete Instrument")
+        print("4. Exit")
 
         choice = input("Choose an option: ")
 
@@ -51,8 +52,21 @@ def main():
                        f"Status: {instrument['status']} | "
                        f"instrument_type: {instrument['instrument_type']}"
                    )
-
         elif choice == "3":
+            serial = input("Enter the serial number of the instrument to delete: ")
+            found = False
+
+            for instrument in instruments:
+                if instrument["serial"] == serial:
+                    instruments.remove(instrument)
+                    print("Instrument deleted successfully!")
+                    found = True
+                    break
+
+            if not found:
+                print("Instrument not found.")           
+
+        elif choice == "4":
             print("Goodbye!")
             break
 
