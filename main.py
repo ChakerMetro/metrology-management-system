@@ -16,7 +16,7 @@ def main():
             next_calibration_date = input("Next calibration date (YYYY-MM-DD): ")
             location = input("Location: ")
             status = input("Status (Active/Inactive): ")
-            type = input("Type of instrument: ")
+            instrument_type = input("Type of instrument: ")
 
 
             instrument = {
@@ -27,7 +27,7 @@ def main():
             "next_calibration_date": next_calibration_date,
             "location": location,
             "status": status,
-            "type": type
+            "instrument_type": instrument_type
             }
 
             instruments.append(instrument)
@@ -49,7 +49,7 @@ def main():
                        f"Next Calibration Date: {instrument['next_calibration_date']} | "
                        f"Location: {instrument['location']} | "
                        f"Status: {instrument['status']} | "
-                       f"Type: {instrument['type']}"
+                       f"instrument_type: {instrument['instrument_type']}"
                    )
 
         elif choice == "3":
