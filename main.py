@@ -1,5 +1,19 @@
+
+import json
+
+def save_instruments(instruments):
+    with open("instruments.json", "w") as file:
+        json.dump(instruments, file, indent=4)
+
+def load_instruments():
+    try:
+        with open("instruments.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return []
+
 def main():
-    instruments = []
+    instruments = load_instruments()
     while True:
         print("\n=== Metrology Management System ===")
         print("1. Add Instrument")
@@ -33,7 +47,7 @@ def main():
             }
 
             instruments.append(instrument)
-
+            save_instruments(instruments)
             print("Instrument added successfully!")
 
         elif choice == "2":
@@ -60,6 +74,7 @@ def main():
             for instrument in instruments:
                 if instrument["serial"] == serial:
                     instruments.remove(instrument)
+                    save_instruments(instruments)
                     print("Instrument deleted successfully!")
                     found = True
                     break
@@ -91,6 +106,7 @@ def main():
                         "instrument_type": instrument_type
                     })
 
+                    save_instruments(instruments)
                     print("Instrument updated successfully!")
                     found = True
                     break
