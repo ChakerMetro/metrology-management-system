@@ -5,7 +5,8 @@ def main():
         print("1. Add Instrument")
         print("2. View Instruments")
         print("3. Delete Instrument")
-        print("4. Exit")
+        print("4. Edit Instrument")
+        print("5. Exit")
 
         choice = input("Choose an option: ")
 
@@ -64,9 +65,40 @@ def main():
                     break
 
             if not found:
-                print("Instrument not found.")           
-
+                print("Instrument not found.") 
         elif choice == "4":
+            serial = input("Enter the serial number of the instrument to edit: ")
+            found = False
+
+            for instrument in instruments:
+                if instrument["serial"] == serial:
+                    print("Leave field blank to keep current value.")
+                    name = input(f"Instrument name ({instrument['name']}): ") or instrument['name']
+                    manufacturer = input(f"The Manufacturer name ({instrument['manufacturer']}): ") or instrument['manufacturer']
+                    calibration_date = input(f"Calibration date (YYYY-MM-DD) ({instrument['calibration_date']}): ") or instrument['calibration_date']
+                    next_calibration_date = input(f"Next calibration date (YYYY-MM-DD) ({instrument['next_calibration_date']}): ") or instrument['next_calibration_date']
+                    location = input(f"Location ({instrument['location']}): ") or instrument['location']
+                    status = input(f"Status (Active/Inactive) ({instrument['status']}): ") or instrument['status']
+                    instrument_type = input(f"Type of instrument ({instrument['instrument_type']}): ") or instrument['instrument_type']
+
+                    instrument.update({
+                        "name": name,
+                        "manufacturer": manufacturer,
+                        "calibration_date": calibration_date,
+                        "next_calibration_date": next_calibration_date,
+                        "location": location,
+                        "status": status,
+                        "instrument_type": instrument_type
+                    })
+
+                    print("Instrument updated successfully!")
+                    found = True
+                    break
+
+            if not found:
+                print("Instrument not found.")                  
+
+        elif choice == "5":
             print("Goodbye!")
             break
 
