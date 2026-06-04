@@ -1,1 +1,12 @@
-[]
+[
+    {
+        "name": "Calpier uno",
+        "serial": "1234",
+        "manufacturer": "golden",
+        "calibration_date": "2025-12-01",
+        "next_calibration_date": "2026-06-03",
+        "location": "lab 1",
+        "status": "active",
+        "instrument_type": "length mesurment"
+    }
+]

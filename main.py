@@ -1,4 +1,4 @@
-
+from datetime import datetime
 import json
 
 def save_instruments(instruments):
@@ -21,7 +21,8 @@ def main():
         print("3. Delete Instrument")
         print("4. Edit Instrument")
         print("5. Search Instrument")
-        print("6. Exit")
+        print("6. View Instruments Due soon (30days or less)")
+        print("7. Exit")
 
         choice = input("Choose an option: ")
 
@@ -142,7 +143,41 @@ def main():
 
             if not found:
                 print("Instrument not found.")
+                
         elif choice == "6":
+            # View instruments due soon (30 days or less) or overdue
+            due_soon = []
+            today = datetime.now().date()
+
+            for instrument in instruments:
+                next_calibration_date = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
+                days_until_calibration = (next_calibration_date - today).days
+
+                # Changed '0 <=' to include negative numbers (overdue tools)
+                if days_until_calibration <= 30:
+                    # We save the instrument AND its specific days remaining together
+                    due_soon.append((instrument, days_until_calibration))
+
+            if due_soon:
+                print("\n--- Instruments Due Soon / Overdue ---")
+                # Loop through our pairs cleanly
+                for instrument, days_left in due_soon:
+                    # If days_left is negative, it's overdue!
+                    if days_left < 0:
+                        status_msg = f"🚨 OVERDUE by {abs(days_left)} days!"
+                    else:
+                        status_msg = f"{days_left} days remaining"
+
+                    print(
+                        f"Name: {instrument['name']} | "
+                        f"Serial: {instrument['serial']} | "
+                        f"Next Calibration Date: {instrument['next_calibration_date']} | "
+                        f"Timeline: {status_msg}"
+                    )
+            else:
+                print("No instruments are due for calibration in the next 30 days.")
+                
+        elif choice == "7":
             print("Goodbye!")
             break
         else:
