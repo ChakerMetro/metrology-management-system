@@ -20,7 +20,8 @@ def main():
         print("2. View Instruments")
         print("3. Delete Instrument")
         print("4. Edit Instrument")
-        print("5. Exit")
+        print("5. Search Instrument")
+        print("6. Exit")
 
         choice = input("Choose an option: ")
 
@@ -112,12 +113,38 @@ def main():
                     break
 
             if not found:
-                print("Instrument not found.")                  
-
+                print("Instrument not found.") 
+                             
         elif choice == "5":
+            search_term = input(
+                "Enter the name or serial number of the instrument to search: "
+            ).lower()
+
+            found = False
+
+            for instrument in instruments:
+                if (
+                    instrument["serial"].lower() == search_term
+                    or search_term in instrument["name"].lower()
+                ):
+                    print("\n--- Instrument Found ---")
+                    print(
+                        f"Name: {instrument['name']} | "
+                        f"Serial: {instrument['serial']} | "
+                        f"Manufacturer: {instrument['manufacturer']} | "
+                        f"Calibration Date: {instrument['calibration_date']} | "
+                        f"Next Calibration Date: {instrument['next_calibration_date']} | "
+                        f"Location: {instrument['location']} | "
+                        f"Status: {instrument['status']} | "
+                        f"Instrument Type: {instrument['instrument_type']}"
+                    )
+                    found = True
+
+            if not found:
+                print("Instrument not found.")
+        elif choice == "6":
             print("Goodbye!")
             break
-
         else:
             print("Invalid choice")
 
