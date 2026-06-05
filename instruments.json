@@ -8,5 +8,25 @@
         "location": "lab 1",
         "status": "active",
         "instrument_type": "length mesurment"
+    },
+    {
+        "name": "Caliper dos",
+        "serial": "4412",
+        "manufacturer": "Silver",
+        "calibration_date": "2025-06-06",
+        "next_calibration_date": "2026-06-10",
+        "location": "lab 2",
+        "status": "inactive",
+        "instrument_type": "length mesurment"
+    },
+    {
+        "name": "Caliper tr\u00e9s",
+        "serial": "5520",
+        "manufacturer": "Bronze",
+        "calibration_date": "2025-06-06",
+        "next_calibration_date": "2026-07-22",
+        "location": "lab 3",
+        "status": "active",
+        "instrument_type": "length mesurment"
     }
 ]

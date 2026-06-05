@@ -21,6 +21,25 @@ def load_instruments():
 # ==========================================
 # APPLICATION FEATURE FUNCTIONS
 # ==========================================
+def get_valid_date(prompt, allow_empty=False):
+    """
+    Forces the user to input a valid date format (YYYY-MM-DD).
+    If allow_empty is True, hitting enter without typing anything is allowed (for editing).
+    """
+    while True:
+        date_str = input(prompt).strip()
+        
+        # If we are editing, an empty input means "don't change the date"
+        if allow_empty and date_str == "":
+            return ""
+
+        try:
+            # We try to parse the string using our date blueprint
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return date_str  # If successful, exit the loop and pass back the clean date text
+        except ValueError:
+            # If datetime throws an error, catch it here instead of crashing!
+            print("❌ Invalid date format! Please use exactly YYYY-MM-DD (e.g., 2026-06-05).")
 
 def add_instrument(instruments):
     """Handles adding a new instrument to the system."""
@@ -28,8 +47,8 @@ def add_instrument(instruments):
     name = input("Instrument name: ")
     serial = input("Serial number: ")
     manufacturer = input("The Manufacturer name: ")
-    calibration_date = input("Calibration date (YYYY-MM-DD): ")
-    next_calibration_date = input("Next calibration date (YYYY-MM-DD): ")
+    calibration_date = get_valid_date("Calibration date (YYYY-MM-DD): ")
+    next_calibration_date = get_valid_date("Next calibration date (YYYY-MM-DD): ")
     location = input("Location: ")
     status = input("Status (Active/Inactive): ")
     instrument_type = input("Type of instrument: ")
@@ -98,8 +117,8 @@ def edit_instrument(instruments):
             print("\nLeave field blank to keep current value.")
             name = input(f"Instrument name ({instrument['name']}): ") or instrument['name']
             manufacturer = input(f"The Manufacturer name ({instrument['manufacturer']}): ") or instrument['manufacturer']
-            calibration_date = input(f"Calibration date (YYYY-MM-DD) ({instrument['calibration_date']}): ") or instrument['calibration_date']
-            next_calibration_date = input(f"Next calibration date (YYYY-MM-DD) ({instrument['next_calibration_date']}): ") or instrument['next_calibration_date']
+            calibration_date = get_valid_date(f"Calibration date (YYYY-MM-DD) ({instrument['calibration_date']}): ", allow_empty=True)
+            next_calibration_date = get_valid_date(f"Next calibration date (YYYY-MM-DD) ({instrument['next_calibration_date']}): ", allow_empty=True)
             location = input(f"Location ({instrument['location']}): ") or instrument['location']
             status = input(f"Status (Active) ({instrument['status']}): ") or instrument['status']
             instrument_type = input(f"Type of instrument ({instrument['instrument_type']}): ") or instrument['instrument_type']
