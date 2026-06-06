@@ -143,25 +143,58 @@ def edit_instrument(instruments):
 
 
 def search_instruments(instruments):
-    """Searches for instruments by Name or Serial."""
-    search_term = input("Enter the name or serial number of the instrument to search: ").lower()
+    """Provides a targeted sub-menu to search instruments by specific fields."""
+    if len(instruments) == 0:
+        print("No instruments registered to search.")
+        return
+
+    print("\n--- Search Filter Options ---")
+    print("1. Search by Serial Number")
+    print("2. Search by Instrument Name")
+    print("3. Search by Manufacturer")
+    print("4. Search by Instrument Type")
+    
+    sub_choice = input("Select a search criteria (1-4): ").strip()
+    
+    # Validation check for the sub-menu choice
+    if sub_choice not in ["1", "2", "3", "4"]:
+        print("❌ Invalid search choice. Returning to main menu.")
+        return
+
+    search_term = input("Enter your search keyword: ").strip().lower()
     found = False
 
+    print("\n=== SEARCH RESULTS ===")
     for instrument in instruments:
-        if instrument["serial"].lower() == search_term or search_term in instrument["name"].lower():
-            print("\n🔍 --- Instrument Found ---")
+        match = False
+        
+        # Determine matching logic based on user's sub-choice
+        if sub_choice == "1" and search_term in instrument["serial"].lower():
+            match = True
+        elif sub_choice == "2" and search_term in instrument["name"].lower():
+            match = True
+        elif sub_choice == "3" and search_term in instrument["manufacturer"].lower():
+            match = True
+        elif sub_choice == "4" and search_term in instrument["instrument_type"].lower():
+            match = True
+
+        # If a match is found, print it using our clean vertical layout!
+        if match:
             print(f"""
-• Name:                  {instrument['name']}
-• Serial:                {instrument['serial']}
-• Manufacturer:          {instrument['manufacturer']}
-• Next Calibration Date: {instrument['next_calibration_date']}
-• Location:              {instrument['location']}
-• Status:                {instrument['status']}
----------------------------------------""")
+[ Match Found: {instrument['name']} ]
+---------------------------------------
+• Serial Number:          {instrument['serial']}
+• Manufacturer:           {instrument['manufacturer']}
+• Calibration Date:       {instrument['calibration_date']}
+• Next Calibration Date:  {instrument['next_calibration_date']}
+• Location:               {instrument['location']}
+• Status:                 {instrument['status']}
+• Instrument Type:        {instrument['instrument_type']}
+=======================================""")
             found = True
 
     if not found:
-        print("Instrument not found.")
+        print("No matching instruments found for your search term.")
 
 
 def view_due_soon(instruments):
