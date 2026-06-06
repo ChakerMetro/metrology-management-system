@@ -23,34 +23,73 @@ def load_instruments():
 # ==========================================
 def get_valid_date(prompt, allow_empty=False):
     """
-    Forces the user to input a valid date format (YYYY-MM-DD).
-    If allow_empty is True, hitting enter without typing anything is allowed (for editing).
+    Prompts the user for a date and validates it against the YYYY-MM-DD format.
+    If allow_empty is True, the user can hit enter to skip changing the date (used in edit mode).
     """
     while True:
         date_str = input(prompt).strip()
         
-        # If we are editing, an empty input means "don't change the date"
         if allow_empty and date_str == "":
             return ""
 
         try:
-            # We try to parse the string using our date blueprint
-            datetime.strptime(date_str, "%Y-%m-%d")
-            return date_str  # If successful, exit the loop and pass back the clean date text
+            # 1. Parse the date string into a real date object
+            parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
+            
+            # 2. Return it re-formatted! This forces "2026-6-5" to become "2026-06-05"
+            return parsed_date.strftime("%Y-%m-%d")
+            
         except ValueError:
-            # If datetime throws an error, catch it here instead of crashing!
             print("❌ Invalid date format! Please use exactly YYYY-MM-DD (e.g., 2026-06-05).")
 
+def get_valid_status(prompt, allow_empty=False):
+    """
+    Forces the user to input exactly 'Active' or 'Inactive'.
+    Automatically capitalizes input to maintain database consistency.
+    """
+    while True:
+        status_input = input(prompt).strip().capitalize()
+        
+        # If editing, allow hitting enter to keep current value
+        if allow_empty and status_input == "":
+            return ""
+            
+        if status_input in ["Active", "Inactive"]:
+            return status_input
+            
+        print("❌ Invalid input! Status must be exactly 'Active' or 'Inactive'.")            
+
 def add_instrument(instruments):
-    """Handles adding a new instrument to the system."""
+    """Handles adding a new instrument with duplicate-checking and status validation."""
     print("\n--- Add New Instrument ---")
     name = input("Instrument name: ")
-    serial = input("Serial number: ")
+    
+    # --- SAFEGUARD: Unique Serial Number Check ---
+    while True:
+        serial = input("Serial number: ").strip()
+        # Scan the list to check for existing serial matches (case-insensitive)
+        duplicate = False
+        for inst in instruments:
+            if inst["serial"].lower() == serial.lower():
+                duplicate = True
+                break
+        
+        if duplicate:
+            print(f"❌ Error: An instrument with serial '{serial}' already exists! Serials must be unique.")
+        elif serial == "":
+            print("❌ Error: Serial number cannot be left blank.")
+        else:
+            # Serial is completely safe and unique! Break out of the validation loop.
+            break
+
     manufacturer = input("The Manufacturer name: ")
     calibration_date = get_valid_date("Calibration date (YYYY-MM-DD): ")
     next_calibration_date = get_valid_date("Next calibration date (YYYY-MM-DD): ")
     location = input("Location: ")
-    status = input("Status (Active/Inactive): ")
+    
+    # --- SAFEGUARD: Enforced Status ---
+    status = get_valid_status("Status (Active/Inactive): ")
+    
     instrument_type = input("Type of instrument: ")
 
     instrument = {
@@ -66,8 +105,7 @@ def add_instrument(instruments):
 
     instruments.append(instrument)
     save_instruments(instruments)
-    print("✅ Instrument added successfully!")
-
+    print("✅ Instrument added successfully and secured!")
 
 def view_instruments(instruments):
     """Displays all stored instruments in a clean, vertical data sheet layout."""
@@ -109,27 +147,27 @@ def delete_instrument(instruments):
 
 def edit_instrument(instruments):
     """Edits an existing instrument's details using its serial number."""
-    serial = input("Enter the serial number of the instrument to edit: ")
+    serial = input("Enter the serial number of the instrument to edit: ").strip()
     found = False
 
     for instrument in instruments:
-        if instrument["serial"] == serial:
+        if instrument["serial"].lower() == serial.lower():  # Added .lower() for safer matching!
             print("\nLeave field blank to keep current value.")
             name = input(f"Instrument name ({instrument['name']}): ") or instrument['name']
             manufacturer = input(f"The Manufacturer name ({instrument['manufacturer']}): ") or instrument['manufacturer']
             calibration_date = get_valid_date(f"Calibration date (YYYY-MM-DD) ({instrument['calibration_date']}): ", allow_empty=True)
             next_calibration_date = get_valid_date(f"Next calibration date (YYYY-MM-DD) ({instrument['next_calibration_date']}): ", allow_empty=True)
             location = input(f"Location ({instrument['location']}): ") or instrument['location']
-            status = input(f"Status (Active) ({instrument['status']}): ") or instrument['status']
+            status = get_valid_status(f"Status (Active/Inactive) ({instrument['status']}): ", allow_empty=True)
             instrument_type = input(f"Type of instrument ({instrument['instrument_type']}): ") or instrument['instrument_type']
 
             instrument.update({
                 "name": name,
                 "manufacturer": manufacturer,
-                "calibration_date": calibration_date,
-                "next_calibration_date": next_calibration_date,
+                "calibration_date": calibration_date if calibration_date != "" else instrument['calibration_date'],
+                "next_calibration_date": next_calibration_date if next_calibration_date != "" else instrument['next_calibration_date'],
                 "location": location,
-                "status": status,
+                "status": status if status != "" else instrument['status'],
                 "instrument_type": instrument_type
             })
 
@@ -139,8 +177,7 @@ def edit_instrument(instruments):
             break
 
     if not found:
-        print("Instrument not found.")
-
+        print("❌ Instrument not found.")
 
 def search_instruments(instruments):
     """Provides a targeted sub-menu to search instruments by specific fields."""
