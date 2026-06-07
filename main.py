@@ -263,6 +263,52 @@ def view_due_soon(instruments):
     else:
         print("🎉 No instruments are due for calibration in the next 30 days.")
 
+def view_dashboard(instruments):
+    """Displays a high-level data analysis and health report of the lab inventory."""
+    total_assets = len(instruments)
+    if total_assets == 0:
+        print("\n📊 Dashboard Empty: No instruments registered in the system.")
+        return
+
+    active_count = 0
+    overdue_count = 0
+    type_distribution = {}
+    today = datetime.now().date()
+
+    for instrument in instruments:
+        # 1. Parse Status Breakdown
+        if instrument["status"] == "Active":
+            active_count += 1
+
+        # 2. Parse Type Distribution (Standardized to title case)
+        itype = instrument["instrument_type"].strip().title()
+        type_distribution[itype] = type_distribution.get(itype, 0) + 1
+
+        # 3. Calculate Calibration Health Metric
+        next_cal = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
+        days_left = (next_cal - today).days
+        if days_left < 0:
+            overdue_count += 1
+
+    # Compute calculations
+    inactive_count = total_assets - active_count
+    up_to_date_count = total_assets - overdue_count
+    health_percentage = (up_to_date_count / total_assets) * 100
+
+    # Print the Dashboard UI
+    print("\n=======================================")
+    print("📊 LAB ANALYTICS & METROLOGY DASHBOARD")
+    print("=======================================")
+    print(f"• Total Managed Inventory:  {total_assets} assets")
+    print(f"• Operational Status:      🟢 {active_count} Active | 🔴 {inactive_count} Inactive")
+    print(f"• Calibration Health Rate: 🛡️  {health_percentage:.1f}% Up-to-Date")
+    print(f"• Compliance Deficits:     🚨 {overdue_count} Overdue Instruments")
+    print("---------------------------------------")
+    print("⚙️  EQUIPMENT TYPE DISTRIBUTION:")
+    for itype, count in type_distribution.items():
+        print(f"  - {itype}: {count} unit(s)")
+    print("=======================================")        
+
 # ==========================================
 # MAIN INTERACTION LOOP
 # ==========================================
@@ -277,7 +323,8 @@ def main():
         print("4. Edit Instrument")
         print("5. Search Instrument")
         print("6. View Instruments Due soon (30days or less)")
-        print("7. Exit")
+        print("7. View lab analytics Dashboard")
+        print("8. Exit")
 
         choice = input("Choose an option: ")
 
@@ -294,10 +341,12 @@ def main():
         elif choice == "6":
             view_due_soon(instruments)
         elif choice == "7":
+            view_dashboard(instruments)
+        elif choice == "8":
             print("Goodbye!")
             break
         else:
-            print("Invalid choice. Please pick an option from 1 to 7.")
+            print("Invalid choice. Please pick an option from 1 to 8.")
 
 # This triggers our program to run
 main()
