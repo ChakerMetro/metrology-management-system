@@ -57,12 +57,29 @@ def get_valid_status(prompt, allow_empty=False):
         if status_input in ["Active", "Inactive"]:
             return status_input
             
-        print("❌ Invalid input! Status must be exactly 'Active' or 'Inactive'.")            
+        print("❌ Invalid input! Status must be exactly 'Active' or 'Inactive'.") 
+        
+def generate_next_id(instruments):
+    """
+    Scans existing instruments to find the highest numerical ID suffix
+    and returns the next sequential ID (e.g., 'SYS-004').
+    """
+    max_num = 0
+    for inst in instruments:
+        if "id" in inst and inst["id"].startswith("SYS-"):
+            try:
+                # Extract the number after the hyphen
+                num = int(inst["id"].split("-")[1])
+                if num > max_num:
+                    max_num = num
+            except (ValueError, IndexError):
+                continue
+    return f"SYS-{(max_num + 1):03d}"                   
 
 def add_instrument(instruments):
     """Handles adding a new instrument with duplicate-checking and status validation."""
     print("\n--- Add New Instrument ---")
-    name = input("Instrument name: ")
+    name = input("Instrument name: ").strip()
     
     # --- SAFEGUARD: Unique Serial Number Check ---
     while True:
@@ -82,17 +99,19 @@ def add_instrument(instruments):
             # Serial is completely safe and unique! Break out of the validation loop.
             break
 
-    manufacturer = input("The Manufacturer name: ")
+    manufacturer = input("The Manufacturer name: ").strip()
     calibration_date = get_valid_date("Calibration date (YYYY-MM-DD): ")
     next_calibration_date = get_valid_date("Next calibration date (YYYY-MM-DD): ")
-    location = input("Location: ")
+    location = input("Location: ").strip()
     
     # --- SAFEGUARD: Enforced Status ---
     status = get_valid_status("Status (Active/Inactive): ")
     
-    instrument_type = input("Type of instrument: ")
+    instrument_type = input("Type of instrument: ").strip()
+    system_id = generate_next_id(instruments)
 
     instrument = {
+        "id": system_id,
         "name": name,
         "serial": serial,
         "manufacturer": manufacturer,
@@ -105,18 +124,22 @@ def add_instrument(instruments):
 
     instruments.append(instrument)
     save_instruments(instruments)
-    print("✅ Instrument added successfully and secured!")
+    print(f"✅ Instrument added successfully and secured under Tracking ID: {system_id}")
 
 def view_instruments(instruments):
-    """Displays all stored instruments in a clean, vertical data sheet layout."""
+    """Displays all stored instruments in a clean layout, automatically sorted by calibration urgency."""
     if len(instruments) == 0:
         print("No instruments found.")
         return
 
-    print("\n=== CURRENT REGISTERED INSTRUMENTS ===")
-    for instrument in instruments:
+    sorted_instruments = sorted(instruments, key=lambda x: x['next_calibration_date'])
+
+    print("\n=== CURRENT REGISTERED INSTRUMENTS (Sorted by Calibration Urgency) ===")
+    for instrument in sorted_instruments:
+        display_id = instrument.get("id", "N/A")
+        
         print(f"""
-[ Instrument: {instrument['name']} ]
+[ ID: {display_id} | Instrument: {instrument['name']} ]
 ---------------------------------------
 • Serial Number:          {instrument['serial']}
 • Manufacturer:           {instrument['manufacturer']}
@@ -129,12 +152,12 @@ def view_instruments(instruments):
 
 
 def delete_instrument(instruments):
-    """Finds and deletes an instrument by its serial number."""
-    serial = input("Enter the serial number of the instrument to delete: ")
+    """Finds and deletes an instrument by its serial number (case-insensitive)."""
+    serial = input("Enter the serial number of the instrument to delete: ").strip()
     found = False
 
     for instrument in instruments:
-        if instrument["serial"] == serial:
+        if instrument["serial"].lower() == serial.lower():
             instruments.remove(instrument)
             save_instruments(instruments)
             print("❌ Instrument deleted successfully!")
@@ -142,7 +165,7 @@ def delete_instrument(instruments):
             break
 
     if not found:
-        print("Instrument not found.")
+        print("❌ Instrument not found.")
 
 
 def edit_instrument(instruments):
@@ -151,15 +174,15 @@ def edit_instrument(instruments):
     found = False
 
     for instrument in instruments:
-        if instrument["serial"].lower() == serial.lower():  # Added .lower() for safer matching!
+        if instrument["serial"].lower() == serial.lower():
             print("\nLeave field blank to keep current value.")
-            name = input(f"Instrument name ({instrument['name']}): ") or instrument['name']
-            manufacturer = input(f"The Manufacturer name ({instrument['manufacturer']}): ") or instrument['manufacturer']
+            name = input(f"Instrument name ({instrument['name']}): ").strip() or instrument['name']
+            manufacturer = input(f"The Manufacturer name ({instrument['manufacturer']}): ").strip() or instrument['manufacturer']
             calibration_date = get_valid_date(f"Calibration date (YYYY-MM-DD) ({instrument['calibration_date']}): ", allow_empty=True)
             next_calibration_date = get_valid_date(f"Next calibration date (YYYY-MM-DD) ({instrument['next_calibration_date']}): ", allow_empty=True)
-            location = input(f"Location ({instrument['location']}): ") or instrument['location']
+            location = input(f"Location ({instrument['location']}): ").strip() or instrument['location']
             status = get_valid_status(f"Status (Active/Inactive) ({instrument['status']}): ", allow_empty=True)
-            instrument_type = input(f"Type of instrument ({instrument['instrument_type']}): ") or instrument['instrument_type']
+            instrument_type = input(f"Type of instrument ({instrument['instrument_type']}): ").strip() or instrument['instrument_type']
 
             instrument.update({
                 "name": name,
@@ -193,7 +216,6 @@ def search_instruments(instruments):
     
     sub_choice = input("Select a search criteria (1-4): ").strip()
     
-    # Validation check for the sub-menu choice
     if sub_choice not in ["1", "2", "3", "4"]:
         print("❌ Invalid search choice. Returning to main menu.")
         return
@@ -205,7 +227,6 @@ def search_instruments(instruments):
     for instrument in instruments:
         match = False
         
-        # Determine matching logic based on user's sub-choice
         if sub_choice == "1" and search_term in instrument["serial"].lower():
             match = True
         elif sub_choice == "2" and search_term in instrument["name"].lower():
@@ -215,10 +236,10 @@ def search_instruments(instruments):
         elif sub_choice == "4" and search_term in instrument["instrument_type"].lower():
             match = True
 
-        # If a match is found, print it using our clean vertical layout!
         if match:
+            display_id = instrument.get("id", "N/A")
             print(f"""
-[ Match Found: {instrument['name']} ]
+[ ID: {display_id} | Match Found: {instrument['name']} ]
 ---------------------------------------
 • Serial Number:          {instrument['serial']}
 • Manufacturer:           {instrument['manufacturer']}
@@ -254,7 +275,9 @@ def view_due_soon(instruments):
             else:
                 status_msg = f"{days_left} days remaining"
 
+            display_id = instrument.get("id", "N/A")
             print(f"""
+• ID:                    {display_id}
 • Name:                  {instrument['name']}
 • Serial:                {instrument['serial']}
 • Next Calibration Date: {instrument['next_calibration_date']}
@@ -276,26 +299,21 @@ def view_dashboard(instruments):
     today = datetime.now().date()
 
     for instrument in instruments:
-        # 1. Parse Status Breakdown
         if instrument["status"] == "Active":
             active_count += 1
 
-        # 2. Parse Type Distribution (Standardized to title case)
         itype = instrument["instrument_type"].strip().title()
         type_distribution[itype] = type_distribution.get(itype, 0) + 1
 
-        # 3. Calculate Calibration Health Metric
         next_cal = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
         days_left = (next_cal - today).days
         if days_left < 0:
             overdue_count += 1
 
-    # Compute calculations
     inactive_count = total_assets - active_count
     up_to_date_count = total_assets - overdue_count
     health_percentage = (up_to_date_count / total_assets) * 100
 
-    # Print the Dashboard UI
     print("\n=======================================")
     print("📊 LAB ANALYTICS & METROLOGY DASHBOARD")
     print("=======================================")
@@ -315,6 +333,18 @@ def view_dashboard(instruments):
 
 def main():
     instruments = load_instruments()
+    
+    # ⚙️ LEGACY DATA MIGRATION ENGINE
+    migration_needed = False
+    for inst in instruments:
+        if "id" not in inst:
+            inst["id"] = generate_next_id(instruments)
+            migration_needed = True
+            
+    if migration_needed:
+        save_instruments(instruments)
+        print("⚙️ System: Database successfully migrated to Schema v1.0.0 (Tracking IDs added).")
+        
     while True:
         print("\n=== Metrology Management System ===")
         print("1. Add Instrument")
@@ -326,7 +356,7 @@ def main():
         print("7. View lab analytics Dashboard")
         print("8. Exit")
 
-        choice = input("Choose an option: ")
+        choice = input("Choose an option: ").strip()
 
         if choice == "1":
             add_instrument(instruments)
@@ -348,5 +378,4 @@ def main():
         else:
             print("Invalid choice. Please pick an option from 1 to 8.")
 
-# This triggers our program to run
 main()
