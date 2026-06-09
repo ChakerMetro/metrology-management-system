@@ -1,5 +1,74 @@
 from datetime import datetime
 import json
+import sqlite3
+
+# ==========================================
+# DATABASE FUNCTIONS
+# ==========================================
+
+from datetime import datetime
+
+def init_db():
+    """Initializes the SQLite database and creates the instruments table if it doesn't exist."""
+    # Connects to metrology.db (creates it automatically if it doesn't exist)
+    conn = sqlite3.connect("metrology.db")
+    cursor = conn.cursor()
+    
+    # Create the table using our strict schema
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS instruments (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            serial TEXT UNIQUE NOT NULL,
+            manufacturer TEXT NOT NULL,
+            calibration_date TEXT NOT NULL,
+            next_calibration_date TEXT NOT NULL,
+            location TEXT NOT NULL,
+            status TEXT NOT NULL,
+            instrument_type TEXT NOT NULL
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+
+def migrate_json_to_sqlite(json_instruments):
+    """Safely ports existing legacy JSON instruments over to the new SQLite database."""
+    if not json_instruments:
+        return
+
+    conn = sqlite3.connect("metrology.db")
+    cursor = conn.cursor()
+    migrated_count = 0
+
+    for inst in json_instruments:
+        # INSERT OR IGNORE checks the PRIMARY KEY (id). If it already exists, SQL skips it seamlessly!
+        cursor.execute("""
+            INSERT OR IGNORE INTO instruments (
+                id, name, serial, manufacturer, calibration_date, 
+                next_calibration_date, location, status, instrument_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            inst.get("id"),
+            inst.get("name"),
+            inst.get("serial"),
+            inst.get("manufacturer"),
+            inst.get("calibration_date"),
+            inst.get("next_calibration_date"),
+            inst.get("location"),
+            inst.get("status"),
+            inst.get("instrument_type")
+        ))
+        
+        # cursor.rowcount lets us know if a row was actually inserted or skipped
+        if cursor.rowcount > 0:
+            migrated_count += 1
+
+    conn.commit()
+    conn.close()
+
+    if migrated_count > 0:
+        print(f"📦 Database Bridge: Successfully migrated {migrated_count} assets from JSON to SQLite!")    
 
 # ==========================================
 # FILE HANDLING FUNCTIONS
@@ -332,6 +401,9 @@ def view_dashboard(instruments):
 # ==========================================
 
 def main():
+    init_db()
+    legacy_instruments = load_instruments()
+    migrate_json_to_sqlite(legacy_instruments)  # Ensure the database is initialized (even if we're not using it yet)
     instruments = load_instruments()
     
     # ⚙️ LEGACY DATA MIGRATION ENGINE

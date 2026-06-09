@@ -7,7 +7,8 @@
         "next_calibration_date": "2026-06-03",
         "location": "lab 1",
         "status": "active",
-        "instrument_type": "length mesurment"
+        "instrument_type": "length mesurment",
+        "id": "SYS-001"
     },
     {
         "name": "Caliper dos",
@@ -17,7 +18,8 @@
         "next_calibration_date": "2026-06-10",
         "location": "lab 2",
         "status": "inactive",
-        "instrument_type": "length mesurment"
+        "instrument_type": "length mesurment",
+        "id": "SYS-002"
     },
     {
         "name": "Caliper tr\u00e9s",
@@ -27,6 +29,7 @@
         "next_calibration_date": "2026-07-22",
         "location": "lab 3",
         "status": "active",
-        "instrument_type": "length mesurment"
+        "instrument_type": "length mesurment",
+        "id": "SYS-003"
     }
 ]
