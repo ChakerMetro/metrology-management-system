@@ -7,10 +7,11 @@ import sqlite3
 # ==========================================
 
 def init_db():
-    """Initializes the database with case-insensitive unique constraints."""
+    """Initializes the main inventory table and the compliance audit log table."""
     with sqlite3.connect("metrology.db") as conn:
         cursor = conn.cursor()
-        # Added COLLATE NOCASE to serial to prevent duplicates like 'sn-1' and 'SN-1'
+        
+        # 1. Main Inventory Table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS instruments (
                 id TEXT PRIMARY KEY,
@@ -22,6 +23,18 @@ def init_db():
                 location TEXT NOT NULL,
                 status TEXT NOT NULL,
                 instrument_type TEXT NOT NULL
+            )
+        """)
+        
+        # 2. 🛡️ Regulatory Audit History Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_history (
+                log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                instrument_id TEXT NOT NULL,
+                serial TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                details TEXT NOT NULL,
+                timestamp TEXT NOT NULL
             )
         """)
 
@@ -50,7 +63,51 @@ def migrate_json_to_sqlite(json_instruments):
                 migrated_count += 1
 
     if migrated_count > 0:
-        print(f"📦 Database Bridge: Successfully migrated {migrated_count} assets from JSON to SQLite!")    
+        print(f"📦 Database Bridge: Successfully migrated {migrated_count} assets from JSON to SQLite!") 
+
+def log_change(cursor, instrument_id, serial, action_type, details):
+    """
+    Automates compliance tracking.
+    Inserts a historical snapshot into the audit table using an active cursor transaction.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        INSERT INTO audit_history (instrument_id, serial, action_type, details, timestamp)
+        VALUES (?, ?, ?, ?, ?)
+    """, (instrument_id, serial, action_type, details, timestamp))
+
+def view_audit_history():
+    """Fetches and displays the immutable regulatory audit trail."""
+    print("\n--- Compliance Audit Logs ---")
+    search_serial = input("Enter serial number to filter logs (or leave blank to see all history): ").strip()
+    
+    with sqlite3.connect("metrology.db") as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if search_serial:
+            cursor.execute("""
+                SELECT * FROM audit_history 
+                WHERE LOWER(serial) = LOWER(?) 
+                ORDER BY log_id DESC
+            """, (search_serial,))
+        else:
+            cursor.execute("SELECT * FROM audit_history ORDER BY log_id DESC")
+            
+        logs = cursor.fetchall()
+
+    if not logs:
+        print("ℹ️ No audit history records found matching your request.")
+        return
+
+    print("\n📜 ================= COMPLIANCE AUDIT TRAIL =================")
+    for log in logs:
+        print(f"""[{log['timestamp']}] ACTION: {log['action_type']} | Asset Serial: {log['serial']}
+• System Tracking ID: {log['instrument_id']}
+• Change Ledger Details:
+  ↳ {log['details']}
+----------------------------------------------------------------------""")
+    print("==============================================================")         
 
 def load_instruments():
     """Loads backup tracking from JSON file if it exists."""
@@ -115,7 +172,7 @@ def generate_next_id(cursor):
 # ==========================================
 
 def add_instrument():
-    """Handles adding a new instrument using context isolation."""
+    """Handles adding a new instrument and automatically logs initialization."""
     print("\n--- Add New Instrument (SQL Writer Mode) ---")
     name = input("Instrument name: ").strip()
     serial = input("Serial number: ").strip()
@@ -134,7 +191,6 @@ def add_instrument():
     try:
         with sqlite3.connect("metrology.db") as conn:
             cursor = conn.cursor()
-            # Shared cursor connection optimization
             system_id = generate_next_id(cursor)
             
             cursor.execute("""
@@ -143,6 +199,16 @@ def add_instrument():
                     next_calibration_date, location, status, instrument_type
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (system_id, name, serial, manufacturer, calibration_date, next_calibration_date, location, status, instrument_type))
+            
+            # 📜 Automatic Compliance Audit Log Entry
+            log_change(
+                cursor, 
+                system_id, 
+                serial, 
+                "ADD", 
+                f"Asset initialized into inventory. Initial Status: '{status}' | Next Cal Due: {next_calibration_date}."
+            )
+            
             print(f"✅ Instrument added successfully and secured under Tracking ID: {system_id}")
     except sqlite3.IntegrityError:
         print(f"❌ Error: An instrument with serial '{serial}' already exists! Transaction aborted.")
@@ -174,7 +240,7 @@ def view_instruments():
 =======================================""")
 
 def delete_instrument():
-    """Deletes an instrument by its serial number securely."""
+    """Deletes an instrument securely while leaving an absolute paper trail behind."""
     serial = input("Enter the serial number of the instrument to delete: ").strip()
     if not serial:
         print("❌ Error: Serial number cannot be left blank.")
@@ -182,19 +248,35 @@ def delete_instrument():
 
     with sqlite3.connect("metrology.db") as conn:
         cursor = conn.cursor()
+        
+        # 📜 Critical Step: Look up the tracking information BEFORE removing the asset
+        cursor.execute("SELECT id, name FROM instruments WHERE LOWER(serial) = LOWER(?)", (serial,))
+        instrument = cursor.fetchone()
+        
+        if not instrument:
+            print("❌ Instrument not found.")
+            return
+            
+        inst_id, inst_name = instrument[0], instrument[1]
+        
         cursor.execute("DELETE FROM instruments WHERE LOWER(serial) = LOWER(?)", (serial,))
         
-        if cursor.rowcount > 0:
-            print("❌ Instrument deleted successfully from the SQL database!")
-        else:
-            print("❌ Instrument not found.")
+        # 📜 Log the purge action so historical compliance tracking data is never broken
+        log_change(
+            cursor, 
+            inst_id, 
+            serial, 
+            "DELETE", 
+            f"Asset '{inst_name}' was explicitly deleted and purged from active inventory registries."
+        )
+        print("❌ Instrument deleted successfully from the SQL database!")
 
 def edit_instrument():
-    """Edits fluid instrument parameters via SQLite (ID and Serial remain strictly unchangeable)."""
+    """Edits fluid parameters and records precise delta variations for high-stakes metrics."""
     serial = input("Enter the serial number of the instrument to edit: ").strip()
     
     with sqlite3.connect("metrology.db") as conn:
-        conn.row_factory = sqlite3.Row  # Access columns by string name
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         cursor.execute("SELECT * FROM instruments WHERE LOWER(serial) = LOWER(?)", (serial,))
@@ -208,14 +290,12 @@ def edit_instrument():
         name = input(f"Instrument name ({instrument['name']}): ").strip() or instrument['name']
         manufacturer = input(f"The Manufacturer name ({instrument['manufacturer']}): ").strip() or instrument['manufacturer']
         
-        # 1. Capture and check Calibration Date safely
         raw_cal = get_valid_date(f"Calibration date (YYYY-MM-DD) ({instrument['calibration_date']}): ", allow_empty=True)
         if raw_cal is None:
             print("🛑 Edit operation cancelled by user.")
             return
         calibration_date = raw_cal or instrument['calibration_date']
 
-        # 2. Capture and check Next Calibration Date safely
         raw_next_cal = get_valid_date(f"Next calibration date (YYYY-MM-DD) ({instrument['next_calibration_date']}): ", allow_empty=True)
         if raw_next_cal is None:
             print("🛑 Edit operation cancelled by user.")
@@ -226,13 +306,30 @@ def edit_instrument():
         status = get_valid_status(f"Status (Active/Inactive) ({instrument['status']}): ", allow_empty=True) or instrument['status']
         instrument_type = input(f"Type of instrument ({instrument['instrument_type']}): ").strip() or instrument['instrument_type']
 
-        # 🔒 IMMUTABILITY LAYER: Only update fluid fields, filtering by the unique asset ID
+        # 📜 COMPLIANCE ENGINE: Calculate variations across high-stakes parameters
+        changes_tracked = []
+        if instrument['status'] != status:
+            changes_tracked.append(f"Status shifted from '{instrument['status']}' to '{status}'")
+        if instrument['calibration_date'] != calibration_date:
+            changes_tracked.append(f"Last Cal shifted from {instrument['calibration_date']} to {calibration_date}")
+        if instrument['next_calibration_date'] != next_calibration_date:
+            changes_tracked.append(f"Next Cal deadline shifted from {instrument['next_calibration_date']} to {next_calibration_date}")
+
+        # Construct log description based on dynamic variations
+        if changes_tracked:
+            audit_details = " | ".join(changes_tracked)
+        else:
+            audit_details = "Equipment properties updated (High-stakes timeline and operational metrics remained unchanged)."
+
+        # Execute changes
         cursor.execute("""
             UPDATE instruments 
             SET name = ?, manufacturer = ?, calibration_date = ?, next_calibration_date = ?, location = ?, status = ?, instrument_type = ?
             WHERE id = ?
         """, (name, manufacturer, calibration_date, next_calibration_date, location, status, instrument_type, instrument['id']))
         
+        # 📜 Commit tracking log entry inside the identical connection thread
+        log_change(cursor, instrument['id'], instrument['serial'], "EDIT", audit_details)
         print("📝 Instrument updated successfully in SQLite!")
 
 def search_instruments():
@@ -379,7 +476,7 @@ def main():
     migrate_json_to_sqlite(legacy_instruments)
     
     while True:
-        print("\n=== Metrology Management System (v1.1 Stable SQL) ===")
+        print("\n=== Metrology Management System (v2.0 Compliance Core) ===")
         print("1. Add Instrument")
         print("2. View Instruments")
         print("3. Delete Instrument")
@@ -387,7 +484,8 @@ def main():
         print("5. Search Instrument")
         print("6. View Instruments Due soon (30days or less)")
         print("7. View lab analytics Dashboard")
-        print("8. Exit")
+        print("8. View Regulatory Audit History Logs")  # 📜 New Option!
+        print("9. Exit")
 
         choice = input("Choose an option: ")
 
@@ -398,11 +496,12 @@ def main():
         elif choice == "5": search_instruments()
         elif choice == "6": view_due_soon()
         elif choice == "7": view_dashboard()
-        elif choice == "8":
+        elif choice == "8": view_audit_history()  # 📜 Call history viewer
+        elif choice == "9":
             print("Goodbye!")
             break
         else:
-            print("Invalid choice. Please pick an option from 1 to 8.")
-
+            print("Invalid choice. Please pick an option from 1 to 9.")
+            
 if __name__ == "__main__":
     main()
