@@ -370,28 +370,56 @@ def search_instruments():
         print(f"[ ID: {instrument['id']} | Match: {instrument['name']} ]\n• Serial: {instrument['serial']} | Status: {instrument['status']} | Location: {instrument['location']}")
 
 def view_due_soon():
-    """Queries SQLite for active assets requiring calibration within 30 days."""
+    """Queries SQLite for active assets requiring calibration within 30 days or already overdue."""
     with sqlite3.connect("metrology.db") as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM instruments 
-            WHERE is_deleted = 0 AND status = 'Active' AND next_calibration_date <= date('now', '+30 days')
-            ORDER BY next_calibration_date ASC
-        """)
-        due_instruments = cursor.fetchall()
+        # Pull all active, non-archived instruments to evaluate them in Python
+        cursor.execute("SELECT * FROM instruments WHERE is_deleted = 0 AND status = 'Active'")
+        instruments = cursor.fetchall()
+
+    if not instruments:
+        print("🎉 No active instruments found in the registry.")
+        return
+
+    today = datetime.now().date()
+    due_instruments = []
+
+    for instrument in instruments:
+        try:
+            # Parse the text date cleanly using Python's verified engine
+            next_cal = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
+            days_left = (next_cal - today).days
+            
+            # Catch anything already overdue (days_left < 0) or due within the next 30 days
+            if days_left <= 30:
+                due_instruments.append((instrument, days_left))
+        except ValueError:
+            # Gracefully skip any legacy, badly-formatted test entries from older versions
+            continue
+
+    # Sort entries by urgency (most overdue items float to the very top)
+    due_instruments.sort(key=lambda x: x[1])
 
     if not due_instruments:
         print("🎉 No active instruments are due for calibration in the next 30 days.")
         return
 
-    print("\n⏳ --- Instruments Due Soon / Overdue ---")
-    today = datetime.now().date()
-    for instrument in due_instruments:
-        next_cal = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
-        days_left = (next_cal - today).days
-        status_msg = f"🚨 OVERDUE by {abs(days_left)} days!" if days_left < 0 else f"{days_left} days remaining"
-        print(f"• Name: {instrument['name']} | Serial: {instrument['serial']} | Due Date: {instrument['next_calibration_date']} ({status_msg})")
+    print("\n⏳ --- Instruments Due Soon / Overdue (Python Verified Engine) ---")
+    for instrument, days_left in due_instruments:
+        if days_left < 0:
+            status_msg = f"🚨 OVERDUE by {abs(days_left)} days!"
+        elif days_left == 0:
+            status_msg = "⚠️ DUE TODAY!"
+        else:
+            status_msg = f"⏳ {days_left} days remaining"
+
+        print(f"""
+• Name:                  {instrument['name']}
+• Serial:                {instrument['serial']}
+• Next Calibration Date: {instrument['next_calibration_date']}
+• Timeline Status:       {status_msg}
+---------------------------------------""")
 
 # ==========================================
 # 🧪 NEW: METROLOGY CALIBRATION EVENTS LOGIC
