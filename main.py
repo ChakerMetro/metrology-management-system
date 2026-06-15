@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 import sqlite3
 import os
+import hashlib
 
 # ==========================================
 # DATABASE FUNCTIONS & COMPLIANCE SCHEMAS
@@ -40,7 +41,7 @@ def init_db():
         if "certificate_path" not in columns:
             cursor.execute("ALTER TABLE instruments ADD COLUMN certificate_path TEXT DEFAULT '';")
         
-        # 2. 🛡️ Regulatory Audit History Table (Protected via RESTRICT parameters)
+        # 2. Regulatory Audit History Table (Protected via RESTRICT parameters)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS audit_history (
                 log_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +54,7 @@ def init_db():
             )
         """)
         
-        # 3. 🧪 Traceable Calibration Events Log (ISO 17025 Compliance Metric)
+        # 3. Traceable Calibration Events Log (ISO 17025 Compliance Metric)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS calibration_events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +68,7 @@ def init_db():
                 pass_fail TEXT CHECK(pass_fail IN ('Pass', 'Fail')),
                 notes TEXT,
                 certificate_path TEXT DEFAULT '',
+                certificate_hash TEXT DEFAULT '',
                 FOREIGN KEY (instrument_id) REFERENCES instruments(id) ON DELETE RESTRICT
             )
         """)
@@ -76,6 +78,8 @@ def init_db():
         cal_columns = [col[1] for col in cursor.fetchall()]
         if "certificate_path" not in cal_columns:
             cursor.execute("ALTER TABLE calibration_events ADD COLUMN certificate_path TEXT DEFAULT '';")
+        if "certificate_hash" not in cal_columns:
+            cursor.execute("ALTER TABLE calibration_events ADD COLUMN certificate_hash TEXT DEFAULT '';")
 
 def migrate_json_to_sqlite(json_instruments):
     """Safely ports legacy JSON data over to SQLite using context managers."""
@@ -186,7 +190,12 @@ def generate_next_id(cursor):
     cursor.execute("SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) FROM instruments WHERE id LIKE 'SYS-%'")
     result = cursor.fetchone()
     max_num = result[0] if result[0] is not None else 0
-    return f"SYS-{(max_num + 1):03d}"        
+    return f"SYS-{(max_num + 1):03d}"
+
+def hash_file(path):
+    """Computes SHA-256 hash of a file for tamper-proof certificate verification."""
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 # ==========================================
 # INVENTORY CONTROLLER MODULES
@@ -432,7 +441,7 @@ def view_due_soon():
 # ==========================================
 
 def record_calibration():
-    """Captures raw laboratory validation metadata and logs a traceable Calibration Event with file verification."""
+    """Captures raw laboratory validation metadata and logs a traceable Calibration Event with file verification and integrity hashing."""
     print("\n--- Record New Laboratory Calibration Event ---")
     serial = input("Enter the instrument serial number: ").strip()
     
@@ -464,15 +473,26 @@ def record_calibration():
 
     notes = input("Operational/Tolerance notes: ").strip()
 
-    # 📁 NEW FEATURE: Interactive local file verification gatekeeper
+    # Interactive local file verification gatekeeper with absolute path resolution
+    cert_path = ""
+    cert_hash = ""
     while True:
-        cert_path = input("Enter local path to the calibration certificate file (or leave blank): ").strip()
-        if cert_path == "":
-            break # Technician chose not to link a file, bypass verification gracefully
+        raw_path = input("Enter local path to the calibration certificate file (or leave blank): ").strip()
+        if raw_path == "":
+            break
+        
+        # Resolve to absolute path for portability
+        cert_path = os.path.abspath(raw_path)
         
         if os.path.exists(cert_path):
-            print("✅ File verified successfully on local machine disk.")
-            break
+            try:
+                cert_hash = hash_file(cert_path)
+                print(f"✅ File verified and hashed successfully. SHA-256: {cert_hash[:16]}...")
+                break
+            except Exception as e:
+                print(f"❌ Hashing Error: {e}. Please try again or leave blank.")
+                cert_path = ""
+                cert_hash = ""
         else:
             print("❌ File Verification Error: The specified path does not exist. Please check for typos and try again.")
 
@@ -493,15 +513,15 @@ def record_calibration():
         cursor = conn.cursor()
         
         try:
-            # 1. Insert records to Calibration events history repository (with file path mapped)
+            # Insert records to Calibration events history repository with file path and hash
             cursor.execute("""
                 INSERT INTO calibration_events (
                     instrument_id, cal_date, next_cal_date, technician, 
-                    standard_used, temperature, humidity, pass_fail, notes, certificate_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (instrument['id'], cal_date, next_cal_date, technician, standard_used, temperature, humidity, pass_fail, notes, cert_path))
+                    standard_used, temperature, humidity, pass_fail, notes, certificate_path, certificate_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (instrument['id'], cal_date, next_cal_date, technician, standard_used, temperature, humidity, pass_fail, notes, cert_path, cert_hash))
             
-            # 2. Update active properties inside Main Inventory table (with file path updated to latest state)
+            # Update active properties inside Main Inventory table with file path updated to latest state
             new_status = "Active" if pass_fail == "Pass" else "Inactive"
             cursor.execute("""
                 UPDATE instruments 
@@ -509,10 +529,10 @@ def record_calibration():
                 WHERE id = ?
             """, (cal_date, next_cal_date, new_status, cert_path, instrument['id']))
             
-            # 3. Secure snapshot change marker on the global audit trail
+            # Secure snapshot change marker on the global audit trail
             audit_msg = f"Calibrated by {technician}. Result: {pass_fail} | Next Due: {next_cal_date} | Temp: {temperature}°C, RH: {humidity}%"
             if cert_path:
-                audit_msg += f" | Certificate Linked: {cert_path}"
+                audit_msg += f" | Certificate: {cert_path} | Hash: {cert_hash[:16]}..."
                 
             log_change(cursor, instrument['id'], instrument['serial'], "CALIBRATE", audit_msg)
             print(f"✅ Calibration event securely integrated! Inventory data adjusted to: '{new_status}'")
@@ -520,7 +540,7 @@ def record_calibration():
             print(f"❌ Database Transaction Interrupted: {e}")
 
 def view_calibration_history():
-    """Chronologically loops calibration metrics tracking parameters for verification audits."""
+    """Chronologically loops calibration metrics tracking parameters for verification audits, with archive flagging."""
     serial = input("Enter instrument serial number to verify calibration history: ").strip()
     
     with sqlite3.connect("metrology.db") as conn:
@@ -528,7 +548,7 @@ def view_calibration_history():
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT ce.*, i.name as inst_name, i.serial as inst_serial 
+            SELECT ce.*, i.name as inst_name, i.serial as inst_serial, i.is_deleted as inst_deleted
             FROM calibration_events ce
             JOIN instruments i ON ce.instrument_id = i.id
             WHERE LOWER(i.serial) = LOWER(?)
@@ -540,17 +560,22 @@ def view_calibration_history():
         print("ℹ️ No historical execution records found for this instrument.")
         return
 
-    print(f"\n📜 ============ CALIBRATION LOG TIMELINE: {events[0]['inst_name'].upper()} ============")
+    # Flag archived instruments in the header
+    archive_flag = " [ARCHIVED]" if events[0]['inst_deleted'] else ""
+    print(f"\n📜 ============ CALIBRATION LOG TIMELINE: {events[0]['inst_name'].upper()}{archive_flag} ============")
+    
     for ev in events:
         verdict_icon = "🟢" if ev['pass_fail'] == "Pass" else "🔴"
         cert_file = ev['certificate_path'] if ev['certificate_path'] else "None"
+        cert_integrity = f" | Hash: {ev['certificate_hash'][:16]}..." if ev['certificate_hash'] else ""
+        
         print(f"""[Event ID: {ev['event_id']}] Execution Date: {ev['cal_date']}
 • Technician:       {ev['technician']}
 • Reference ID:     {ev['standard_used']}
 • Environment:      🌡️ {ev['temperature']}°C | 💧 {ev['humidity']}% RH
 • Status Verdict:   {verdict_icon} {ev['pass_fail'].upper()}
 • Next Recall Due:  {ev['next_cal_date']}
-• Certificate Linked: {cert_file}
+• Certificate Linked: {cert_file}{cert_integrity}
 • Technician Notes: {ev['notes'] if ev['notes'] else 'N/A'}
 -------------------------------------------------------------------------""")
     print("=========================================================================")
@@ -605,7 +630,7 @@ def main():
     migrate_json_to_sqlite(legacy_instruments)
     
     while True:
-        print("\n=== Metrology Management System (v2.6 Secure Core Prototype) ===")
+        print("\n=== Metrology Management System (v2.7 Secure Core Prototype) ===")
         print("1. Add Instrument")
         print("2. View Instruments")
         print("3. Archive/Delete Instrument (Soft Delete)")
