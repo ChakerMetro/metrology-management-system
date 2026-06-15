@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import sqlite3
+import os
 
 # ==========================================
 # DATABASE FUNCTIONS & COMPLIANCE SCHEMAS
@@ -14,7 +15,7 @@ def init_db():
         # Force Foreign Key constraint tracking inside the SQLite runtime environment
         cursor.execute("PRAGMA foreign_keys = ON;")
         
-        # 1. Main Inventory Table (Upgraded with Soft Delete capabilities)
+        # 1. Main Inventory Table (Fortified with certificate path tracking field)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS instruments (
                 id TEXT PRIMARY KEY,
@@ -26,7 +27,8 @@ def init_db():
                 location TEXT NOT NULL,
                 status TEXT NOT NULL,
                 instrument_type TEXT NOT NULL,
-                is_deleted INTEGER DEFAULT 0
+                is_deleted INTEGER DEFAULT 0,
+                certificate_path TEXT DEFAULT ''
             )
         """)
         
@@ -35,6 +37,8 @@ def init_db():
         columns = [col[1] for col in cursor.fetchall()]
         if "is_deleted" not in columns:
             cursor.execute("ALTER TABLE instruments ADD COLUMN is_deleted INTEGER DEFAULT 0;")
+        if "certificate_path" not in columns:
+            cursor.execute("ALTER TABLE instruments ADD COLUMN certificate_path TEXT DEFAULT '';")
         
         # 2. 🛡️ Regulatory Audit History Table (Protected via RESTRICT parameters)
         cursor.execute("""
@@ -49,7 +53,7 @@ def init_db():
             )
         """)
         
-        # 3. 🧪 BRAND NEW: Traceable Calibration Events Log (ISO 17025 Compliance Metric)
+        # 3. 🧪 Traceable Calibration Events Log (ISO 17025 Compliance Metric)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS calibration_events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,12 +66,19 @@ def init_db():
                 humidity REAL NOT NULL,
                 pass_fail TEXT CHECK(pass_fail IN ('Pass', 'Fail')),
                 notes TEXT,
+                certificate_path TEXT DEFAULT '',
                 FOREIGN KEY (instrument_id) REFERENCES instruments(id) ON DELETE RESTRICT
             )
         """)
+        
+        # Self-Healing Layer for calibration events table
+        cursor.execute("PRAGMA table_info(calibration_events);")
+        cal_columns = [col[1] for col in cursor.fetchall()]
+        if "certificate_path" not in cal_columns:
+            cursor.execute("ALTER TABLE calibration_events ADD COLUMN certificate_path TEXT DEFAULT '';")
 
 def migrate_json_to_sqlite(json_instruments):
-    """Safely ports legacy JSON data over to SQLite using content managers."""
+    """Safely ports legacy JSON data over to SQLite using context managers."""
     if not json_instruments:
         return
 
@@ -79,8 +90,8 @@ def migrate_json_to_sqlite(json_instruments):
             cursor.execute("""
                 INSERT OR IGNORE INTO instruments (
                     id, name, serial, manufacturer, calibration_date, 
-                    next_calibration_date, location, status, instrument_type, is_deleted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    next_calibration_date, location, status, instrument_type, is_deleted, certificate_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '')
             """, (
                 inst.get("id"), inst.get("name"), inst.get("serial"),
                 inst.get("manufacturer"), inst.get("calibration_date"),
@@ -94,7 +105,7 @@ def migrate_json_to_sqlite(json_instruments):
         print(f"📦 Database Bridge: Successfully migrated {migrated_count} assets from JSON to SQLite!") 
 
 def log_change(cursor, instrument_id, serial, action_type, details):
-    """Automates compliance tracking tracking inside an active transaction execution cursor."""
+    """Automates compliance tracking inside an active transaction execution cursor."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute("""
         INSERT INTO audit_history (instrument_id, serial, action_type, details, timestamp)
@@ -131,7 +142,7 @@ def view_audit_history():
 • System Tracking ID: {log['instrument_id']}
 • Change Ledger Details:
   ↳ {log['details']}
-----------------------------------------------------------------------""")
+------------------------------------------------------""")
     print("==============================================================")         
 
 def load_instruments():
@@ -171,7 +182,7 @@ def get_valid_status(prompt, allow_empty=False):
         print("❌ Invalid input! Status must be exactly 'Active' or 'Inactive'.") 
 
 def generate_next_id(cursor):
-    """Calculates the next sequence natively inside SQL via extraction expressions (Scans all items to prevent collisions)."""
+    """Calculates the next sequence natively inside SQL via extraction expressions."""
     cursor.execute("SELECT MAX(CAST(SUBSTR(id, 5) AS INTEGER)) FROM instruments WHERE id LIKE 'SYS-%'")
     result = cursor.fetchone()
     max_num = result[0] if result[0] is not None else 0
@@ -193,7 +204,7 @@ def add_instrument():
 
     manufacturer = input("The Manufacturer name: ").strip()
     
-    # 🛡️ UPGRADE 1: Strict Timeline Gatekeeping Loop
+    # Strict Timeline Gatekeeping Loop
     while True:
         calibration_date = get_valid_date("Calibration date (YYYY-MM-DD): ")
         if calibration_date is None: return
@@ -217,8 +228,8 @@ def add_instrument():
             cursor.execute("""
                 INSERT INTO instruments (
                     id, name, serial, manufacturer, calibration_date, 
-                    next_calibration_date, location, status, instrument_type, is_deleted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    next_calibration_date, location, status, instrument_type, is_deleted, certificate_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '')
             """, (system_id, name, serial, manufacturer, calibration_date, next_calibration_date, location, status, instrument_type))
             
             log_change(cursor, system_id, serial, "ADD", f"Asset initialized into inventory. Status: '{status}' | Next Due: {next_calibration_date}.")
@@ -240,6 +251,7 @@ def view_instruments():
 
     print("\n=== CURRENT REGISTERED INSTRUMENTS (Active Registries Only) ===")
     for instrument in instruments:
+        cert_file = instrument['certificate_path'] if instrument['certificate_path'] else "None Linked"
         print(f"""[ ID: {instrument['id']} | Instrument: {instrument['name']} ]
 ------------------------------------------------------
 • Serial Number:          {instrument['serial']}
@@ -249,6 +261,7 @@ def view_instruments():
 • Location:               {instrument['location']}
 • Status:                 {instrument['status']}
 • Instrument Type:        {instrument['instrument_type']}
+• Certificate File:       {cert_file}
 =======================================================""")
 
 def delete_instrument():
@@ -305,7 +318,7 @@ def edit_instrument():
         if raw_next_cal is None: print("🛑 Edit operation cancelled."); return
         next_calibration_date = raw_next_cal or instrument['next_calibration_date']
         
-        # 🛡️ UPGRADE 1: Verification gate block inside editor engine
+        # Verification gate block inside editor engine
         if next_calibration_date <= calibration_date:
             print("❌ Compliance Error: Next calibration date cannot be before or equal to the calibration date! Update aborted.")
             return
@@ -331,7 +344,7 @@ def edit_instrument():
         print("📝 Instrument updated successfully in SQLite!")
 
 def search_instruments():
-    """Provides dynamic cross-column sweeping while avoiding archived rows."""
+    """Provides dynamic cross-column sweeping while avoiding archived rows and ensuring parameterized safety."""
     print("\n--- Search Filter Options (SQL Pure Mode) ---")
     print("1. Search by Serial Number")
     print("2. Search by Instrument Name")
@@ -358,7 +371,7 @@ def search_instruments():
                             OR LOWER(manufacturer) LIKE LOWER(?)
                             OR LOWER(instrument_type) LIKE LOWER(?)
                             OR LOWER(location) LIKE LOWER(?)
-                            OR LOWER(status) LIKE LOWER(?))""", [query_param]*6)
+                            OR LOWER(status) LIKE LOWER(?))""", (query_param, query_param, query_param, query_param, query_param, query_param))
         else:
             print("❌ Invalid choice."); return
 
@@ -374,7 +387,6 @@ def view_due_soon():
     with sqlite3.connect("metrology.db") as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        # Pull all active, non-archived instruments to evaluate them in Python
         cursor.execute("SELECT * FROM instruments WHERE is_deleted = 0 AND status = 'Active'")
         instruments = cursor.fetchall()
 
@@ -387,18 +399,13 @@ def view_due_soon():
 
     for instrument in instruments:
         try:
-            # Parse the text date cleanly using Python's verified engine
             next_cal = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
             days_left = (next_cal - today).days
-            
-            # Catch anything already overdue (days_left < 0) or due within the next 30 days
             if days_left <= 30:
                 due_instruments.append((instrument, days_left))
         except ValueError:
-            # Gracefully skip any legacy, badly-formatted test entries from older versions
             continue
 
-    # Sort entries by urgency (most overdue items float to the very top)
     due_instruments.sort(key=lambda x: x[1])
 
     if not due_instruments:
@@ -414,19 +421,18 @@ def view_due_soon():
         else:
             status_msg = f"⏳ {days_left} days remaining"
 
-        print(f"""
-• Name:                  {instrument['name']}
+        print(f"""• Name:                  {instrument['name']}
 • Serial:                {instrument['serial']}
 • Next Calibration Date: {instrument['next_calibration_date']}
 • Timeline Status:       {status_msg}
 ---------------------------------------""")
 
 # ==========================================
-# 🧪 NEW: METROLOGY CALIBRATION EVENTS LOGIC
+# METROLOGY CALIBRATION EVENTS LOGIC
 # ==========================================
 
 def record_calibration():
-    """🧪 Captures raw laboratory validation metadata and logs an traceable Calibration Event."""
+    """Captures raw laboratory validation metadata and logs a traceable Calibration Event with file verification."""
     print("\n--- Record New Laboratory Calibration Event ---")
     serial = input("Enter the instrument serial number: ").strip()
     
@@ -458,6 +464,18 @@ def record_calibration():
 
     notes = input("Operational/Tolerance notes: ").strip()
 
+    # 📁 NEW FEATURE: Interactive local file verification gatekeeper
+    while True:
+        cert_path = input("Enter local path to the calibration certificate file (or leave blank): ").strip()
+        if cert_path == "":
+            break # Technician chose not to link a file, bypass verification gracefully
+        
+        if os.path.exists(cert_path):
+            print("✅ File verified successfully on local machine disk.")
+            break
+        else:
+            print("❌ File Verification Error: The specified path does not exist. Please check for typos and try again.")
+
     # Timeline confirmation rules
     while True:
         cal_date = get_valid_date("Date Calibration Performed (YYYY-MM-DD): ")
@@ -475,30 +493,28 @@ def record_calibration():
         cursor = conn.cursor()
         
         try:
-            # 1. Insert records to Calibration events history repository
+            # 1. Insert records to Calibration events history repository (with file path mapped)
             cursor.execute("""
                 INSERT INTO calibration_events (
                     instrument_id, cal_date, next_cal_date, technician, 
-                    standard_used, temperature, humidity, pass_fail, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (instrument['id'], cal_date, next_cal_date, technician, standard_used, temperature, humidity, pass_fail, notes))
+                    standard_used, temperature, humidity, pass_fail, notes, certificate_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (instrument['id'], cal_date, next_cal_date, technician, standard_used, temperature, humidity, pass_fail, notes, cert_path))
             
-            # 2. Update active properties inside Main Inventory table
+            # 2. Update active properties inside Main Inventory table (with file path updated to latest state)
             new_status = "Active" if pass_fail == "Pass" else "Inactive"
             cursor.execute("""
                 UPDATE instruments 
-                SET calibration_date = ?, next_calibration_date = ?, status = ?
+                SET calibration_date = ?, next_calibration_date = ?, status = ?, certificate_path = ?
                 WHERE id = ?
-            """, (cal_date, next_cal_date, new_status, instrument['id']))
+            """, (cal_date, next_cal_date, new_status, cert_path, instrument['id']))
             
             # 3. Secure snapshot change marker on the global audit trail
-            log_change(
-                cursor, 
-                instrument['id'], 
-                instrument['serial'], 
-                "CALIBRATE", 
-                f"Calibrated by {technician}. Result: {pass_fail} | Next Due: {next_cal_date} | Temp: {temperature}°C, RH: {humidity}%"
-            )
+            audit_msg = f"Calibrated by {technician}. Result: {pass_fail} | Next Due: {next_cal_date} | Temp: {temperature}°C, RH: {humidity}%"
+            if cert_path:
+                audit_msg += f" | Certificate Linked: {cert_path}"
+                
+            log_change(cursor, instrument['id'], instrument['serial'], "CALIBRATE", audit_msg)
             print(f"✅ Calibration event securely integrated! Inventory data adjusted to: '{new_status}'")
         except sqlite3.Error as e:
             print(f"❌ Database Transaction Interrupted: {e}")
@@ -527,18 +543,20 @@ def view_calibration_history():
     print(f"\n📜 ============ CALIBRATION LOG TIMELINE: {events[0]['inst_name'].upper()} ============")
     for ev in events:
         verdict_icon = "🟢" if ev['pass_fail'] == "Pass" else "🔴"
+        cert_file = ev['certificate_path'] if ev['certificate_path'] else "None"
         print(f"""[Event ID: {ev['event_id']}] Execution Date: {ev['cal_date']}
 • Technician:       {ev['technician']}
 • Reference ID:     {ev['standard_used']}
 • Environment:      🌡️ {ev['temperature']}°C | 💧 {ev['humidity']}% RH
 • Status Verdict:   {verdict_icon} {ev['pass_fail'].upper()}
 • Next Recall Due:  {ev['next_cal_date']}
+• Certificate Linked: {cert_file}
 • Technician Notes: {ev['notes'] if ev['notes'] else 'N/A'}
 -------------------------------------------------------------------------""")
     print("=========================================================================")
 
 # ==========================================
-# ANALYTICS ENGINE & MAIN SYSTEM LOOP
+# ANALYTICS ENGINE & SYSTEM DASHBOARD
 # ==========================================
 
 def view_dashboard():
@@ -562,8 +580,11 @@ def view_dashboard():
     for instrument in instruments:
         itype = instrument["instrument_type"].strip().title()
         type_distribution[itype] = type_distribution.get(itype, 0) + 1
-        next_cal = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
-        if (next_cal - today).days < 0: overdue_count += 1
+        try:
+            next_cal = datetime.strptime(instrument['next_calibration_date'], "%Y-%m-%d").date()
+            if (next_cal - today).days < 0: overdue_count += 1
+        except ValueError:
+            continue
 
     health_percentage = ((total_assets - overdue_count) / total_assets) * 100
 
@@ -574,13 +595,17 @@ def view_dashboard():
     for itype, count in type_distribution.items(): print(f"  - {itype}: {count} unit(s)")
     print("=======================================")        
 
+# ==========================================
+# MAIN SYSTEM LOOP
+# ==========================================
+
 def main():
     init_db()
     legacy_instruments = load_instruments()
     migrate_json_to_sqlite(legacy_instruments)
     
     while True:
-        print("\n=== Metrology Management System (v2.5 Lab-Ready Prototype) ===")
+        print("\n=== Metrology Management System (v2.6 Secure Core Prototype) ===")
         print("1. Add Instrument")
         print("2. View Instruments")
         print("3. Archive/Delete Instrument (Soft Delete)")
